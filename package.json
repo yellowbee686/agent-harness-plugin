@@ -1,0 +1,21 @@
+{
+  "name": "agent-harness-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Composable CLM and RLM plugins for DeepSeek Harness",
+  "license": "MIT",
+  "repository": "github:yellowbee686/agent-harness-plugin",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "npm test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh": "0.1.7-rc.2"
+  }
+}
