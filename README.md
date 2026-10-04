@@ -51,9 +51,9 @@ Set `DSH_HOME` to an isolated directory when trying a new composition. Add your 
 
 ## Validation
 
-`npm test` currently runs **11 in-process integration tests**: eight CLM tests (including actual RLM composition) and three RLM tests. They use real DSH services and the real persistent Worker, with a deterministic model adapter. Tests cover effective next-request edits, raw-history preservation and replay, protected messages, tool pairing, stale/invalid edits, parent/child isolation, plugin unload, cross-cell state, timeout state loss, and native child-to-grandchild recursion.
+`npm test` runs CLM integration tests (including actual RLM composition), RLM integration tests and schema presentation regressions. They use real DSH services and the real persistent Worker, with a deterministic model adapter. Tests cover effective next-request edits, raw-history preservation and replay, protected messages, tool pairing, stale/invalid edits, parent/child isolation, plugin unload, cross-cell state, timeout state loss, native child-to-grandchild recursion, bounded MCP schema projection and foreground-only headless delegation.
 
-The consuming host also exercised CLM, RLM, and their combination with Qwen 3.8 on real data. Those private business artifacts are not distributed here. This is functional validation, not a benchmark or a guarantee that a model will follow the protocol on every task. In particular, required headless children must be awaited before the final answer; the RLM wrapper supplies guidance rather than enforcing child completion in the host lifecycle.
+The consuming host also exercised CLM, RLM, and their combination with Qwen 3.8 on real data. Those private business artifacts are not distributed here. This is functional validation, not a benchmark or a guarantee that a model will follow the protocol on every task. Required headless children must be awaited before the final answer; the RLM wrapper rejects background delegation but does not enforce child completion in the host lifecycle.
 
 ## Discoverability and attribution
 

@@ -28,7 +28,13 @@ This is a persistent **TypeScript Realm**, not a Python/IPython kernel. Imports 
 
 The wrapper adds one prompt section for headless completion. Required child work must use `await agents.spawn({ description, prompt, run_in_background: false })` (or `agents.fork`) and its returned output must be incorporated before the final answer. Parallel required calls can be awaited together with `Promise.allSettled`. `agents.send` acknowledges delivery, and `agents.list` reports status; neither waits for a report. There is no `agents.wait` or `agents.join` API. A final answer can end the host process and stop background children, so waiting commentary and unfinished drafts must not be presented as completion.
 
-This is model guidance, not a lifecycle guarantee: the wrapper does not block final answers or change background-tool semantics. Verify the final artifact and child result in real model tests.
+The wrapper requires explicit `run_in_background: false` for native spawn/fork calls. It rejects both `true` and omission, since a host's continuable tool can default to background execution. It does not silently convert the request or block final answers. Verify the final artifact and child result in real model tests.
+
+## Tool schema presentation
+
+The pinned DSH SDK renders an entire tool argument type as `unknown` when a JSON Schema contains value constraints such as `minimum` or `maxItems`. This composition repairs failed declarations after Prime assembles its SDK. A detached presentation copy places those constraints in documentation while retaining property names, required fields, enums and array types. Registered MCP schemas and runtime validation remain unchanged.
+
+Schemas whose structure still cannot be projected retain `unknown` with an explicit original JSON Schema fallback. The adapter preserves Prime's guidance, agents/jobs aliases and the host's visible capability scope. A changed SDK layout fails visibly rather than dropping declarations silently.
 
 ## Context ownership and lifetime
 

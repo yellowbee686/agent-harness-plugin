@@ -84,6 +84,44 @@ test('real worker retains Maps and closures across cells and isolates sessions',
   assert.equal((await cell(first, 'answer()')).result, 42);
 });
 
+test('real Prime assembly repairs bounded tools and guard rejects background children', { timeout: 30000 }, async t => {
+  const { ctx, create, rawCell, cell } = await fixture(t);
+  const parameters = {
+    type: 'object', additionalProperties: false, required: ['room_ids'],
+    properties: {
+      room_ids: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 100 },
+      limit: { type: 'integer', minimum: 1, maximum: 2000 },
+    },
+  };
+  let executions = 0;
+  ctx.tools.register({
+    name: 'bounded_live', description: 'Live rooms fixture.', parameters,
+    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+    execute: async (args) => {
+      executions++;
+      if (args.limit > 2000) throw new Error('Runtime limit must be <=2000');
+      return args.room_ids.join(',');
+    },
+  });
+  const agent = await create('schema-guard');
+  const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent.ctx });
+  const sdk = assembly.sections.find(section => section.name === 'tools:sdk').text;
+  assert.match(sdk, /room_ids: string\[\]/);
+  assert.match(sdk, /maximum=2000/);
+  assert.deepEqual(ctx.tools.get('bounded_live', agent).parameters, parameters);
+  const invalid = await rawCell(agent, 'await tools.bounded_live({ room_ids: ["1"], limit: 5000 })');
+  assert.equal(invalid.isError, true);
+  assert.match(invalid.error.message, /Runtime limit must be <=2000/);
+  assert.equal(executions, 1);
+  assert.equal((await cell(agent, 'await tools.bounded_live({ room_ids: ["1"], limit: 2000 })')).result, '1');
+  const background = await rawCell(agent, 'await agents.spawn({ description: "child", prompt: "Do required work", run_in_background: true })');
+  assert.equal(background.isError, true);
+  assert.match(background.error.message, /requires foreground children/);
+  const implicit = await rawCell(agent, 'await agents.spawn({ description: "child", prompt: "Do required work" })');
+  assert.equal(implicit.isError, true);
+  assert.match(implicit.error.message, /requires foreground children/);
+});
+
 test('hard timeout loses bindings and explicitly reports namespace restart', { timeout: 30000 }, async t => {
   const { create, cell, rawCell } = await fixture(t, { computeMs: 300, maxWallMs: 5000 });
   const agent = await create('timeout');

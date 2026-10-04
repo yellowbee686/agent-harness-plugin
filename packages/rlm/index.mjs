@@ -1,4 +1,5 @@
 import { apply as applyPrime } from 'dsh-prime-agent';
+import { installSchemaPresentation } from './schema-presentation.mjs';
 
 export { name, inject, Config } from 'dsh-prime-agent';
 
@@ -11,7 +12,14 @@ If a required child fails or cannot finish, inspect the failure and either compl
 
 /** Compose the upstream REPL with the one-shot headless completion contract. */
 export function apply(ctx, config) {
+  installSchemaPresentation(ctx);
   applyPrime(ctx, config);
+  // Headless cannot deliver required background results reliably. Reject the
+  // request rather than silently changing the caller's execution semantics.
+  ctx.tools.guard(exec => ['subagent', 'subagent_fork'].includes(exec.name)
+    && exec.arguments?.run_in_background !== false
+    ? 'Headless RLM requires foreground children. Retry with run_in_background: false and await the returned result before answering.'
+    : undefined);
   // Keep this outside tool:*: Prime replaces those sections with its SDK.
   ctx.systemPrompt.section({
     name: HEADLESS_COMPLETION_SECTION,
