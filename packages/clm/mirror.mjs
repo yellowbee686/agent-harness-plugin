@@ -14,7 +14,7 @@ function snapshot(session) {
 }
 
 /** Only expose complete tool-call/result groups; never split a protected node. */
-function blocksFor(rows) {
+function blocksFor(rows, instructionCalls) {
   const blocks = [];
   let group = [];
   let pending = new Set();
@@ -22,7 +22,13 @@ function blocksFor(rows) {
     if (group.length && pending.size === 0) {
       blocks.push({
         seqs: group.map(row => row.seq),
-        editable: !group.some(({ message }) => message.role === 'user' && message.source?.kind === 'user'),
+        // Host instructions/catalogs are often user-role messages. Only our
+        // own working notes are editable user messages; unknown sources fail
+        // closed. Skill loads remain instructions even inside a REPL cell.
+        editable: !group.some(({ message }) =>
+          (message.role === 'user' && message.source?.kind !== 'dsh-clm') ||
+          (message.role === 'assistant' && message.content.some(part =>
+            part.type === 'tool-call' && (part.name === 'skill' || instructionCalls.has(part.id))))),
         text: group.map(({ message }) => JSON.stringify(message)).join('\n'),
       });
     }
@@ -67,6 +73,18 @@ export class ContextMirror {
 
   publish(session) {
     const rows = snapshot(session);
+    const instructionCalls = new Set();
+    const parents = new Map();
+    for (const event of session.snapshotEvents()) {
+      if (event.type !== 'tool/ptc-dispatch' && event.type !== 'tool/ptc-dispatch-start') continue;
+      const { subCallId, parentCallId, name } = event.data;
+      if (subCallId && parentCallId) parents.set(subCallId, parentCallId);
+      if (name === 'skill' && parentCallId) instructionCalls.add(parentCallId);
+    }
+    for (const id of instructionCalls) {
+      const parent = parents.get(id);
+      if (parent) instructionCalls.add(parent);
+    }
     this.rows = rows;
     this.base = {
       format: 'dsh-clm/1',
@@ -74,7 +92,7 @@ export class ContextMirror {
       revision: randomUUID(),
       digest: hash(rows),
       status: this.status,
-      blocks: blocksFor(rows),
+      blocks: blocksFor(rows, instructionCalls),
     };
     mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
     const temporary = `${this.path}.${randomUUID()}.tmp`;
@@ -96,7 +114,7 @@ export class ContextMirror {
         const block = immutable.blocks[index];
         const original = this.base.blocks[index];
         if (!original || typeof block?.text !== 'string') throw new Error('invalid block');
-        if (!original.editable && block.text !== original.text) throw new Error('user task is protected');
+        if (!original.editable && block.text !== original.text) throw new Error('task or instruction block is protected');
         block.text = original.text;
       }
       if (!isDeepStrictEqual(immutable, this.base)) throw new Error('metadata, order and block membership are immutable');

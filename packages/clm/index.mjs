@@ -28,7 +28,7 @@ export function apply(ctx, config = {}) {
       name: 'clm:editable-context',
       order: 850,
       interpolate: false,
-      text: `Your editable context mirror is ${path}. Read it using native file tools or the REPL filesystem. Edit only the text fields of blocks with editable=true; keep all other JSON fields, block order, and block membership unchanged. The next agent step validates the file and uses accepted edits as user-role context notes in the actual model request. Empty text omits the block. Unchanged blocks retain their native roles and tool structure. Complete tool-call/result groups are one block. Real system/developer instructions are outside the mirror; original user tasks are read-only. Growth is allowed within the ${config.maxBytes ?? 4194304}-byte mirror limit; this is not a model token budget. Perform the entire read-modify-write in ONE tool call or REPL cell. Never cache or reuse the mirror document across cells: its revision changes each request, even though business objects may persist in the REPL. Batch edits, write valid JSON, and read the refreshed status field to check acceptance. The mirror is refreshed before each main model request; never restore an old revision. Raw history remains in the session log.`,
+      text: `Your editable context mirror is ${path}. Read it using native file tools or the REPL filesystem. Edit only the text fields of blocks with editable=true; keep all other JSON fields, block order, and block membership unchanged. The next agent step validates the file and uses accepted edits as user-role context notes in the actual model request. Empty text omits the block. Unchanged blocks retain their native roles and tool structure. Complete tool-call/result groups are one block. Real system/developer instructions are outside the mirror; user tasks, host instruction/catalog messages, and skill-loading tool groups are read-only. Growth is allowed within the ${config.maxBytes ?? 4194304}-byte mirror limit; this is not a model token budget. Perform the entire read-modify-write in ONE tool call or REPL cell. Never cache or reuse the mirror document across cells: its revision changes each request, even though business objects may persist in the REPL. Batch edits, write valid JSON, and read the refreshed status field to check acceptance. The mirror is refreshed before each main model request; never restore an old revision. Raw history remains in the session log.`,
     });
     ctx.effect(() => removeSection);
     if (steering) {
@@ -39,12 +39,15 @@ export function apply(ctx, config = {}) {
       ctx.effect(() => removeSteering);
     }
   });
-  ctx.on('agent/pre-step', async ({ agent }, next) => {
+  ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
+    // Commit completed tool edits before the host prunes their source nodes.
+    // Prepend matters: compaction is normally registered before this plugin.
+    // A later admission rejection does not undo a durable, validated edit.
+    const changed = signal.aborted ? 0 : (mirrors.get(agent)?.accept(agent.session) ?? 0);
     const decision = await next();
     if (decision.kind === 'reject') return decision;
-    const changed = mirrors.get(agent)?.accept(agent.session) ?? 0;
     return changed ? { ...decision, startsRequestSeries: true } : decision;
-  });
+  }, { prepend: true });
   ctx.on('llm/stream', (options, next) => {
     const agent = ctx.agents.currentInitiator();
     const mirror = agent && mirrors.get(agent);

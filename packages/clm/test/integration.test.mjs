@@ -11,6 +11,8 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop';
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection';
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools';
+import TokenMeter from '@deepseek-ai/dsh-token-meter';
+import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner';
 import * as Clm from '../index.mjs';
 import { ContextMirror } from '../mirror.mjs';
 
@@ -32,12 +34,13 @@ class ScriptAdapter extends LlmAdapter {
   }
 }
 
-async function harness(t, script, clmConfig = { steering: 'off' }) {
+async function harness(t, script, clmConfig = { steering: 'off' }, beforeClm = async () => {}) {
   const cwd = mkdtempSync(join(tmpdir(), 'dsh-clm-test-'));
   const ctx = new Context();
   for (const plugin of [LlmRuntime, SessionStore, SessionProjectionRegistry, SystemPrompt, ToolRuntime, AgentRegistry]) {
     await ctx.plugin(plugin);
   }
+  await beforeClm(ctx);
   await ctx.plugin(Clm, clmConfig);
   await ctx.plugin(AgentLoop, { agents: [] });
   const adapter = new ScriptAdapter(script);
@@ -168,6 +171,10 @@ test('RLM live bindings survive a CLM edit made through the real REPL worker', {
   await ctx.plugin(Runtime, { stateDirectory: join(cwd, 'rlm') });
   await ctx.plugin(Rlm, { stateDirectory: join(cwd, 'rlm'), requireOrchestrationTools: false });
   await ctx.plugin(Clm);
+  ctx.tools.register(defineContentToolFixture({
+    name: 'skill', description: 'Load a skill', parameters: {},
+    execute: async () => [{ type: 'text', text: 'REPL_ACTIVE_SKILL_RULE' }],
+  }));
   const results = [];
   ctx.on('tools/result', (exec, result) => { if (exec.name === 'repl') results.push(result); });
   const adapter = new ScriptAdapter((request, number) => {
@@ -180,8 +187,10 @@ test('RLM live bindings survive a CLM edit made through the real REPL worker', {
       // The edit tool's code names the old marker, but the original result is gone.
       const oldResults = request.messages.filter(message => message.role === 'tool' && JSON.stringify(message.content).includes('OLD_LARGE_RLM_EVIDENCE'));
       assert.equal(oldResults.length, 0);
-      return { name: 'repl', args: { code: 'retained.get("answer")' } };
+      return { name: 'repl', args: { code: 'await tools.skill({}); retained.get("answer")' } };
     }
+    const skillBlock = JSON.parse(readFileSync(path)).blocks.find(b => b.text.includes('await tools.skill'));
+    assert(skillBlock && !skillBlock.editable, 'actual nested skill dispatch protects its complete REPL group');
     return 'done';
   });
   ctx.llm.registerAdapter(['script'], adapter);
@@ -313,4 +322,89 @@ test('oversized edits and forged roles are rejected before surface mutation', as
   assert.equal(mirror.accept(agent.session), 0);
   assert.match(mirror.status, /immutable/);
   assert.equal(agent.session.surface.replaceGeneration, 0);
+});
+
+test('host user-role instructions and native/REPL skill loads are immutable, including after replay', async t => {
+  const h = await harness(t, (_request, number) => number === 1 ? { name: 'skill' } : 'analysis');
+  h.ctx.tools.register(defineContentToolFixture({
+    name: 'skill', description: 'Load instructions', parameters: {},
+    execute: async () => [{ type: 'text', text: 'ACTIVE_SKILL_RULE' }],
+  }));
+  const agent = await h.create('instruction-protection');
+  await send(agent, 'task');
+  const kinds = ['agent-instructions', 'runtime-context', 'skill-catalog', 'tool-registry', 'unknown-host-source'];
+  for (const kind of kinds) {
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: `RULE_${kind}` }], ...(kind ? { source: { kind } } : {}),
+    }), { surfaceOp: 'append' });
+  }
+  // Native PTC provenance records a skill load hidden inside an outer call.
+  // Reuse a real completed group so the persisted pairing stays valid.
+  const events = JSON.parse(JSON.stringify(agent.session.snapshotEvents()));
+  const call = events.find(e => e.type === 'assistant/message').data.message.content.find(b => b.type === 'tool-call');
+  call.name = 'repl';
+  const replay = Session.create('instruction-replay', events);
+  replay.append('tool/ptc-dispatch', { name: 'skill', subCallId: 'inner-skill', parentCallId: call.id, rootCallId: call.id, arguments: {}, content: [], isError: false });
+  for (const session of [agent.session, Session.create('second-replay', JSON.parse(JSON.stringify(replay.snapshotEvents())))]) {
+    const mirror = new ContextMirror(join(h.cwd, `${session.id}.json`));
+    mirror.publish(session);
+    const protectedBlocks = mirror.base.blocks.filter(b => /ACTIVE_SKILL_RULE|RULE_/.test(b.text));
+    assert.equal(protectedBlocks.length, kinds.length + 1);
+    assert(protectedBlocks.every(b => !b.editable));
+    const before = session.snapshotEvents().length;
+    for (const block of protectedBlocks) {
+      mirror.publish(session);
+      edit(mirror.path, b => b.seqs[0] === block.seqs[0], 'business summary replacing instructions');
+      assert.equal(mirror.accept(session), 0);
+      assert.match(mirror.status, /protected/);
+      assert.equal(session.snapshotEvents().length, before);
+    }
+    mirror.publish(session);
+    edit(mirror.path, b => b.editable && b.text.includes('analysis'), 'valid working note');
+    assert.equal(mirror.accept(session), 1);
+    assert.match(JSON.stringify(session.deriveMessages()), /ACTIVE_SKILL_RULE/);
+  }
+});
+
+test('pending edits commit before the host pruner, leaving unedited tools subject to pruning', async t => {
+  let path;
+  let pruneEnabled = false;
+  const h = await harness(t, (request, number) => {
+    path = pathFrom(request);
+    if (number <= 2) return { name: 'evidence', args: { label: number === 1 ? 'EDIT_ME' : 'KEEP_ME' } };
+    if (number === 3) return { name: 'edit_context' };
+    return 'done';
+  }, { steering: 'off' }, async ctx => {
+    await ctx.plugin(TokenMeter);
+    await ctx.plugin(ToolResultPruner, { thresholdChars: 100, headChars: 25, tailChars: 10 });
+    // Same ordering as compaction-basic: mutate the surface before next().
+    ctx.on('agent/pre-step', async ({ agent }, next) => {
+      if (pruneEnabled) ctx.toolResultPruner.pruneSession(agent.session);
+      return next();
+    });
+  });
+  h.ctx.tools.register(defineContentToolFixture({
+    name: 'evidence', description: 'Evidence', parameters: { label: { type: 'string' } },
+    execute: async args => [{ type: 'text', text: `${args.label} ${'raw evidence '.repeat(100)}` }],
+  }));
+  h.ctx.tools.register(defineContentToolFixture({
+    name: 'edit_context', description: 'Edit', parameters: {},
+    execute: async () => {
+      edit(path, b => b.text.includes('EDIT_ME'), 'RETAINED_FINDING');
+      pruneEnabled = true;
+      return [{ type: 'text', text: 'edited' }];
+    },
+  }));
+  const agent = await h.create('prune-order');
+  await send(agent, 'Use the evidence');
+  const events = agent.session.snapshotEvents();
+  const accepted = events.find(e => e.data.source?.kind === 'dsh-clm');
+  const pruned = events.find(e => e.type === 'compaction/prune');
+  assert(accepted && pruned);
+  assert(accepted.seq < pruned.seq);
+  assert.match(JSON.stringify(h.adapter.requests.at(-1).messages), /RETAINED_FINDING/);
+  assert.match(JSON.stringify(h.adapter.requests.at(-1).messages), /tool result middle pruned/);
+  assert.match(JSON.parse(readFileSync(path)).status, /accepted: 1/);
+  const replay = Session.create('pruned-replay', JSON.parse(JSON.stringify(events)));
+  assert.match(JSON.stringify(replay.deriveMessages()), /RETAINED_FINDING/);
 });

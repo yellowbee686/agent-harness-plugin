@@ -26,4 +26,14 @@ export function apply(ctx, config) {
     order: 650,
     text: HEADLESS_COMPLETION_GUIDANCE,
   });
+  // Prime removes tool:* sections, including the native structured child's
+  // terminal instruction. Restore that contract using the REPL transport;
+  // the host still validates and captures only a successful outer execution.
+  ctx.systemPrompt.section({
+    name: 'agent-harness-plugin:structured-completion',
+    order: 660,
+    text: ({ agent }) => ctx.tools.get('structured_output', agent)
+      ? 'This child must finish with a validated structured result. Call repl with code `await tools.structured_output(result)` where result matches the generated ToolArgsMap. Make this the last operation of that cell. Do not call structured_output directly, and do not finish with plain text: only the successful structured_output call inside a successful REPL cell counts as the result.'
+      : '',
+  });
 }

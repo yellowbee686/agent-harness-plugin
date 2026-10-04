@@ -30,6 +30,8 @@ The wrapper adds one prompt section for headless completion. Required child work
 
 The wrapper requires explicit `run_in_background: false` for native spawn/fork calls. It rejects both `true` and omission, since a host's continuable tool can default to background execution. It does not silently convert the request or block final answers. Verify the final artifact and child result in real model tests.
 
+A structured one-shot child must submit its schema-valid result with `await tools.structured_output(result)` as the last operation in a REPL cell. The wrapper restores this child-specific completion instruction after Prime removes native tool prompt sections. The host still owns schema validation and captures the result only after the enclosing REPL execution succeeds. Ordinary agents do not receive this instruction.
+
 ## Tool schema presentation
 
 The pinned DSH SDK renders an entire tool argument type as `unknown` when a JSON Schema contains value constraints such as `minimum` or `maxItems`. This composition repairs failed declarations after Prime assembles its SDK. A detached presentation copy places those constraints in documentation while retaining property names, required fields, enums and array types. Registered MCP schemas and runtime validation remain unchanged.

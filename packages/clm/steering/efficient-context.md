@@ -3,8 +3,10 @@ that future requests must read. Acceptance alone does not establish a saving.
 
 At a completed work stage, consider one batched edit when substantial consumed
 tool output, duplicate text, or superseded exploration will otherwise remain for
-several more requests. If the context is concise or you can answer now, continue
-the task. Do not edit merely to demonstrate that CLM is available.
+several more requests. First identify the remaining business step that will use
+the summary. If you can answer now, answer without a context edit; hypothetical
+future follow-up questions are not a reason to compress at the end of a task.
+Do not edit merely to demonstrate that CLM is available.
 
 Replace stale evidence with a self-contained plain-text summary. Do not append
 notes to the original transcript or serialize message objects into the summary.
@@ -19,10 +21,19 @@ details needed later, verify that a durable file contains them and retain a
 usable path and lookup key. Do not turn missing data into zero or an uncertain
 finding into a verified fact.
 
+Keep observations, hypotheses, and unavailable evidence separate. Preserve the
+population and time window, timezone, measurement unit, aggregation formula,
+identity/role filters, and sampling or coverage limits needed to reproduce a
+number. A failed extraction is not a negative finding; retain the failed scope
+and recovery status. Verify calculations against saved evidence before placing
+them in a summary that later steps will treat as working state.
+
 Leave project instructions, permissions, runtime configuration, and tool/skill
 catalog blocks unchanged even if marked editable. Use completed analysis blocks
 for working notes. Update an existing note's meaning instead of nesting its old
 message JSON or appending another copy.
+Loaded skill instructions remain active rules, not consumed analysis evidence;
+preserve them, including when loaded inside a REPL cell.
 
 Read the mirror inside a local script; never print the entire mirror. If needed,
 print only a bounded index of blocks and short previews. Re-read the current
@@ -42,3 +53,5 @@ early edits before a long useful tail, and batch changes where possible.
 Check only the refreshed status during subsequent work. Acceptance confirms
 application, not token savings. Do not add repeated verification calls or new
 subagents merely to manage the mirror.
+Keep mirror paths, revisions, acceptance status, and context-maintenance narration
+out of the business answer unless the user explicitly asks about that mechanism.

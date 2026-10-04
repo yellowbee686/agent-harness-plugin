@@ -180,3 +180,55 @@ test('real native child recursively creates a grandchild with separate live Real
   assert(values.some(value => value?.inherited === 'undefined' && value?.own === 7));
   assert(values.some(value => value?.inherited === 'undefined' && value?.own === 11 && value?.kind === 'foreground'));
 });
+
+test('structured one-shot children finish through REPL with host validation and capture', { timeout: 30000 }, async t => {
+  const { ctx, create } = await fixture(t);
+  let requests = 0;
+  const outputs = [];
+  ctx.on('tools/result', (exec, result) => outputs.push({ name: exec.name, result }));
+  class StructuredModel extends LlmAdapter {
+    async *stream(options) {
+      if (JSON.stringify(options.messages).includes('FAIL_AFTER_CAPTURE')) {
+        yield* options.messages.some(message => message.role === 'assistant')
+          ? textChunks('No valid structured result was committed.')
+          : toolChunks('failed-outer', 'await tools.structured_output({ count: 3 }); throw new Error("after capture")');
+        return;
+      }
+      requests++;
+      assert.deepEqual(options.tools.map(tool => tool.name), ['repl']);
+      const prompt = JSON.stringify(options.messages.filter(m => m.role === 'system'));
+      assert.match(prompt, /await tools\.structured_output\(result\)/);
+      assert.match(prompt, /Do not call structured_output directly/);
+      // An invalid result must not conclude the child or capture an object.
+      yield* toolChunks(`structured-${requests}`, requests === 1
+        ? 'await tools.structured_output({ count: "wrong" })'
+        : 'await tools.structured_output({ count: 3 })');
+    }
+  }
+  ctx.llm.registerAdapter(['fixture'], new StructuredModel());
+  const parent = await create('structured-parent');
+  const rootPrompt = await ctx.systemPrompt.assemble({ agent: parent, scope: parent.ctx });
+  assert(!rootPrompt.sections.some(s => typeof s.text === 'string' && s.text.includes('This child must finish')));
+  const run = await ctx.subagents.start('spawn', {
+    parent, prompt: [{ type: 'text', text: 'Return the count.' }], signal: new AbortController().signal,
+    outputSchema: { type: 'object', properties: { count: { type: 'integer' } }, required: ['count'], additionalProperties: false },
+  });
+  try {
+    const result = await run.result;
+    assert.equal(result.stopReason, 'completed');
+    assert.deepEqual(result.structured, { count: 3 });
+    assert.equal(requests, 2);
+    assert(outputs.some(o => o.name === 'structured_output' && o.result.isError));
+    assert(outputs.some(o => o.name === 'structured_output' && !o.result.isError));
+    assert(outputs.some(o => o.name === 'repl' && !o.result.isError));
+  } finally { await run.dispose(); }
+  const failed = await ctx.subagents.start('spawn', {
+    parent, prompt: [{ type: 'text', text: 'FAIL_AFTER_CAPTURE' }], signal: new AbortController().signal,
+    outputSchema: { type: 'object', properties: { count: { type: 'integer' } }, required: ['count'], additionalProperties: false },
+  });
+  try {
+    const result = await failed.result;
+    assert.equal(result.stopReason, 'error');
+    assert.equal(result.structured, undefined, 'a failed outer cell must never deliver a staged structured result');
+  } finally { await failed.dispose(); }
+});
