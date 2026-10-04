@@ -11,6 +11,8 @@
   "files": [
     "index.mjs",
     "mirror.mjs",
+    "steering.mjs",
+    "steering/",
     "cordis.patch.yml",
     "README.md"
   ],

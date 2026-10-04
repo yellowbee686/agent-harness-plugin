@@ -2,15 +2,19 @@ import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import z from '@deepseek-ai/schemastery';
 import { ContextMirror } from './mirror.mjs';
+import { loadSteering } from './steering.mjs';
 
 export const name = 'dsh-clm';
 export const inject = ['agents', 'sessions', 'systemPrompt', 'llm'];
 export const Config = z.object({
   directory: z.string().default('.dsh/clm'),
   maxBytes: z.number().min(1024).default(4194304),
+  steering: z.string(),
 });
 
 export function apply(ctx, config = {}) {
+  // Read once per plugin lifecycle. Missing/changed documents fail explicitly.
+  const steering = loadSteering(config.steering);
   const mirrors = new WeakMap();
   ctx.on('agent/created', ({ agent }) => {
     const key = createHash('sha256').update(agent.id).digest('hex');
@@ -27,6 +31,13 @@ export function apply(ctx, config = {}) {
       text: `Your editable context mirror is ${path}. Read it using native file tools or the REPL filesystem. Edit only the text fields of blocks with editable=true; keep all other JSON fields, block order, and block membership unchanged. The next agent step validates the file and uses accepted edits as user-role context notes in the actual model request. Empty text omits the block. Unchanged blocks retain their native roles and tool structure. Complete tool-call/result groups are one block. Real system/developer instructions are outside the mirror; original user tasks are read-only. Growth is allowed within the ${config.maxBytes ?? 4194304}-byte mirror limit; this is not a model token budget. Perform the entire read-modify-write in ONE tool call or REPL cell. Never cache or reuse the mirror document across cells: its revision changes each request, even though business objects may persist in the REPL. Batch edits, write valid JSON, and read the refreshed status field to check acceptance. The mirror is refreshed before each main model request; never restore an old revision. Raw history remains in the session log.`,
     });
     ctx.effect(() => removeSection);
+    if (steering) {
+      const removeSteering = agent.ctx.systemPrompt.section({
+        name: 'clm:steering', order: 851, interpolate: false,
+        text: `## CLM context-management strategy\nSource: ${steering.path}\nSHA-256: ${steering.sha256}\n\n${steering.text}`,
+      });
+      ctx.effect(() => removeSteering);
+    }
   });
   ctx.on('agent/pre-step', async ({ agent }, next) => {
     const decision = await next();

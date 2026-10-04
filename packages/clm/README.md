@@ -25,6 +25,25 @@ The default mirror lives at `<session cwd>/.dsh/clm/<sha256 session id>/LIVE_CON
 
 `directory` is resolved against the session working directory. Different sessions use different files. Use one process writer per session, as required by DSH session ownership. Add `.dsh/` to the consuming project's ignore rules if appropriate.
 
+## Optional strategy document
+
+The editing protocol is always present. Context-management strategy is a separate
+Markdown document and is **off by default**:
+
+```sh
+DSH_CLM_STEERING=on npx dsh headless --patch packages/clm/cordis.patch.yml "your task"
+DSH_CLM_STEERING=/absolute/path/strategy.md npx dsh headless --patch packages/clm/cordis.patch.yml "your task"
+```
+
+`on` loads `steering/efficient-context.md`; `off` keeps only the protocol. The Cordis
+config field `steering` accepts the same values and takes precedence over the environment.
+The document is read once at plugin startup and injected as `clm:steering` into main
+and child agents, with its path and SHA-256. Missing or empty documents fail explicitly.
+`DSH_CLM_STEERING_SHA256`, when set by a launcher, rejects changed content before use.
+The built-in strategy guides selective plain-text replacement, evidence retention,
+bounded inspection, and batched edits. It does not add token estimation, a shrink gate,
+or change the mirror acceptance protocol. Token savings still require evaluation.
+
 ## Editing contract
 
 Read the mirror, change only `blocks[i].text` where `editable` is `true`, then write valid JSON. Keep every other field, block, and ordering intact. Complete the read-modify-write in **one tool call or REPL cell**; never reuse a mirror object cached across cells. Business data can remain in the REPL, but mirror revisions change per request. For example, in Prime's REPL after setting `path` to the path in the prompt:

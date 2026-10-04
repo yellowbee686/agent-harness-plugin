@@ -32,13 +32,13 @@ class ScriptAdapter extends LlmAdapter {
   }
 }
 
-async function harness(t, script) {
+async function harness(t, script, clmConfig = { steering: 'off' }) {
   const cwd = mkdtempSync(join(tmpdir(), 'dsh-clm-test-'));
   const ctx = new Context();
   for (const plugin of [LlmRuntime, SessionStore, SessionProjectionRegistry, SystemPrompt, ToolRuntime, AgentRegistry]) {
     await ctx.plugin(plugin);
   }
-  await ctx.plugin(Clm);
+  await ctx.plugin(Clm, clmConfig);
   await ctx.plugin(AgentLoop, { agents: [] });
   const adapter = new ScriptAdapter(script);
   ctx.llm.registerAdapter(['script'], adapter);
@@ -118,7 +118,7 @@ test('plugin unload removes its scoped prompt contribution', async t => {
   const ctx = new Context();
   t.after(async () => { await ctx.fiber.dispose(); rmSync(cwd, { recursive: true, force: true }); });
   for (const plugin of [LlmRuntime, SessionStore, SessionProjectionRegistry, SystemPrompt, ToolRuntime, AgentRegistry]) await ctx.plugin(plugin);
-  const fork = ctx.plugin(Clm);
+  const fork = ctx.plugin(Clm, { steering: 'on' });
   await fork;
   await ctx.plugin(AgentLoop, { agents: [] });
   const adapter = new ScriptAdapter(() => 'done');
@@ -126,10 +126,30 @@ test('plugin unload removes its scoped prompt contribution', async t => {
   const handle = await ctx.agents.create({ sessionId: 'unload', meta: { cwd }, agentOptions: { provider: 'script', model: 'script' } });
   await send(handle.agent, 'before unload');
   assert.match(JSON.stringify(adapter.requests[0].messages), /Your editable context mirror/);
+  assert.match(JSON.stringify(adapter.requests[0].messages), /CLM context-management strategy/);
   await fork.dispose();
   await send(handle.agent, 'after unload');
   assert.doesNotMatch(JSON.stringify(adapter.requests[1].messages.filter(message => message.role === 'system')), /Your editable context mirror/);
+  assert.doesNotMatch(JSON.stringify(adapter.requests[1].messages.filter(message => message.role === 'system')), /CLM context-management strategy/);
   await handle.dispose();
+});
+
+test('steering reaches main and child provider requests only when enabled', async t => {
+  for (const steering of ['off', 'on']) {
+    const h = await harness(t, () => 'done', { steering });
+    const main = await h.create(`strategy-${steering}`);
+    await send(main, 'main task');
+    const child = await h.create(`child-${steering}`, undefined, main);
+    await send(child, 'child task');
+    for (const request of h.adapter.requests) {
+      const system = JSON.stringify(request.messages.filter(m => m.role === 'system'));
+      assert.equal(system.includes('CLM context-management strategy'), steering === 'on');
+      if (steering === 'on') {
+        assert.match(system, /SHA-256: [a-f0-9]{64}/);
+        assert.equal(system.split('## CLM context-management strategy').length - 1, 1);
+      }
+    }
+  }
 });
 
 test('RLM live bindings survive a CLM edit made through the real REPL worker', { timeout: 30000 }, async t => {
