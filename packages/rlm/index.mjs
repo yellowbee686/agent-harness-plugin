@@ -1,5 +1,6 @@
 import { apply as applyPrime } from 'dsh-prime-agent';
 import { installSchemaPresentation } from './schema-presentation.mjs';
+import { installReadText } from './read-text.mjs';
 
 export { name, inject, Config } from 'dsh-prime-agent';
 
@@ -13,6 +14,7 @@ If a required child fails or cannot finish, inspect the failure and either compl
 /** Compose the upstream REPL with the one-shot headless completion contract. */
 export function apply(ctx, config) {
   installSchemaPresentation(ctx);
+  installReadText(ctx);
   applyPrime(ctx, config);
   // Headless cannot deliver required background results reliably. Reject the
   // request rather than silently changing the caller's execution semantics.

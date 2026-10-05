@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -15,6 +15,9 @@ import * as NativeSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process';
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent';
+import LocalFileSystem from '@deepseek-ai/dsh-fs-local';
+import * as FileTools from '@deepseek-ai/dsh-tool-fs';
+import { MAX_READ_TEXT_BYTES } from '../read-text.mjs';
 import * as rlm from '../index.mjs';
 import * as runtime from '../runtime.mjs';
 
@@ -27,6 +30,8 @@ async function fixture(t, options = {}) {
   });
   await ctx.plugin(SystemPrompt);
   await ctx.plugin(ToolRuntime, { mode: 'native' });
+  await ctx.plugin(LocalFileSystem, { cwd: root });
+  await ctx.plugin(FileTools, {});
   await ctx.plugin(LlmRuntime);
   await ctx.plugin(SessionStore);
   await ctx.plugin(AgentRegistry);
@@ -52,8 +57,40 @@ async function fixture(t, options = {}) {
     assert.equal(output.isError, false, output.error?.message);
     return output.value;
   };
-  return { ctx, create, cell, rawCell };
+  return { ctx, root, create, cell, rawCell };
 }
+
+test('complete file input survives native 2k line truncation and REPL display projection', { timeout: 30000 }, async t => {
+  const { ctx, root, create, cell, rawCell } = await fixture(t);
+  const source = JSON.stringify({ padding: '数据😀'.repeat(18000), tail: 42 });
+  await writeFile(join(root, 'large.json'), source);
+  const agent = await create('file-input');
+  const before = await rawCell(agent, 'let preview = await tools.read({ file_path: "large.json" }); JSON.parse(preview.lines.map(l => l.text).join("\\n"))');
+  assert.equal(before.isError, true);
+  const preview = await cell(agent, 'preview.lines[0].text');
+  assert.match(preview.result, /line truncated to 2000 chars/);
+  const result = await cell(agent, 'let raw = await tools.read_text({ file_path: "large.json" }); raw');
+  assert(result); // Direct completion uses a receipt; the canonical string remains bound.
+  assert.deepEqual((await cell(agent, '({ tail: JSON.parse(raw).tail, chars: raw.length })')).result,
+    { tail: 42, chars: source.length });
+  const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent.ctx });
+  assert(assembly.sections.some(s => s.name === 'agent-harness-plugin:complete-file-input'));
+  ctx.tools.guard(exec => exec.name === 'read_text' ? 'fixture read denied' : undefined);
+  const denied = await rawCell(agent, 'await tools.read_text({ file_path: "large.json" })');
+  assert.equal(denied.isError, true);
+  assert.match(denied.error.message, /fixture read denied/);
+});
+
+test('complete file input fails without partial content for missing, non-file and oversized inputs', { timeout: 30000 }, async t => {
+  const { root, create, rawCell } = await fixture(t);
+  await writeFile(join(root, 'oversized.txt'), 'x'.repeat(MAX_READ_TEXT_BYTES + 1));
+  const agent = await create('file-errors');
+  for (const [file, expected] of [['absent', /not found/], ['.', /not a regular file/], ['oversized.txt', /No partial text was returned/]]) {
+    const result = await rawCell(agent, `await tools.read_text({ file_path: ${JSON.stringify(file)} })`);
+    assert.equal(result.isError, true);
+    assert.match(result.error.message, expected);
+  }
+});
 
 function toolChunks(id, code) {
   const args = JSON.stringify({ code });

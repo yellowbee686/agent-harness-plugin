@@ -17,6 +17,12 @@ records.set('second', { value: 7 })
 
 This is a persistent **TypeScript Realm**, not a Python/IPython kernel. Imports and `require` are unavailable. Functions, classes, Maps and ordinary bindings persist in the live worker; only displayed output enters the conversation.
 
+## Complete file input
+
+Use `let raw = await tools.read_text({ file_path: 'workspace/data.json' }); let data = JSON.parse(raw)` to load a text file for computation. This capability uses the host filesystem service, session cwd, cancellation and ordinary tool guards. It returns a complete string up to 8 MiB and rejects larger files without returning a partial value. Keep the string bound and display selected evidence. A direct completion shows a small receipt; the complete value remains available to the Realm.
+
+The host's `read` tool is a display window and truncates individual lines at 2,000 characters **inside its returned value**. Joining `read.lines` therefore cannot recover a single-line JSON file. Increasing its line count or rereading the same line cannot recover the suffix. For larger inputs, perform a streaming computation through the host shell and retain the source file. The complete-file capability does not change `read` or the host's permissions.
+
 ## Recursive work and route ownership
 
 - `agents.query` and `agents.queryMany` run bounded, stateless sub-model calls using the current agent's model route. Their input can come from retained variables, and results remain in the Realm until displayed.

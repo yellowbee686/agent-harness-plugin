@@ -12,6 +12,7 @@
   "files": [
     "index.mjs",
     "schema-presentation.mjs",
+    "read-text.mjs",
     "runtime.mjs",
     "cordis.patch.yml",
     "README.md",
