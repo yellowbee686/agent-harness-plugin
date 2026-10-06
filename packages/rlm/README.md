@@ -2,7 +2,7 @@
 
 This package reuses [dsh-prime-agent 0.6.3](https://github.com/yoke233/dsh-prime-agent/tree/4b5596a8661a6a78b4de0a63a5dfb75bd5d8a2b7) on DSH **0.1.7-rc.2**. It mounts the upstream runtime and control plane directly into the existing headless composition. It does not install the upstream Prime preset or evaluation runner shim.
 
-Apply `cordis.patch.yml` after the host's ordinary model/tool configuration. The patch preserves the headless runner, model provider and MCP registrations. It selects native tool presentation, then the upstream plugin exposes `repl` as the only model-facing tool. Host capabilities remain available inside `repl` through the generated `tools.*` declarations.
+Apply `cordis.patch.yml` after the host's ordinary model/tool configuration. The patch preserves the headless runner, model provider and MCP registrations. It selects native tool presentation, then the upstream plugin exposes `repl` as the only model-facing tool. Host capabilities remain available inside `repl` through the generated `tools.*` declarations. Prime's own `apply_patch` is masked with the upstream `tool-restrictions` row; host `edit` and `write` remain the file-change tools.
 
 ```ts
 // First cell: ordinary TypeScript bindings stay alive.
@@ -54,7 +54,7 @@ The reused control plane also includes upstream `refine.status()` / `refine.run(
 
 State and identity files live under `dshHomePath('agent-harness-plugin', 'rlm')`. A running worker retains variables only within its owning process/session. Hard cancellation, timeout, heap failure, idle reclamation, or process exit may destroy variables. The next cell reports an explicit empty/restarted namespace notice; disk identity files are **not** a heap checkpoint. Save irreplaceable data to files and rebuild bindings after a loss notice.
 
-The default upstream limits include a 10-minute idle lifetime and a pool of 32 active Realms. Use the upstream runtime configuration fields on the `harness-rlm-runtime` patch row when another bounded deployment policy is required.
+The default upstream limits include a 10-minute idle lifetime and a pool of 32 active Realms. This composition raises the Realm heap from the upstream 64 MiB to 512 MiB, matching the host one-shot PTC runtime; per-cell wall and compute limits stay upstream. Use the upstream runtime configuration fields on the `harness-rlm-runtime` patch row when another bounded deployment policy is required.
 
 ## Validation
 

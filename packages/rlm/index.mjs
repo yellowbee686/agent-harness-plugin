@@ -14,11 +14,20 @@ If a required child fails or cannot finish, inspect the failure and either compl
 export const RECURSIVE_BUDGET_GUIDANCE = `agents.query and agents.queryMany share the current model's generation budget, including hidden reasoning tokens. A short requested answer can still require a substantial reasoning budget. Normally omit maxTokens to use the configured default; do not choose a tiny token limit from the expected visible answer length.
 An empty text with truncated=true means the generation budget was exhausted before an answer was produced. It is not an empty source or a negative classification. Never reduce maxTokens to recover from this result. At most one revised attempt is appropriate: omit a previously reduced maxTokens to use the model default, or narrow the input/task while keeping the default budget. Inspect each batch reply, keep completed replies, and retry only incomplete work. If the revised attempt is still incomplete, use already available evidence or a deterministic computation when suitable, or report the unresolved part. Do not loop over unchanged truncated calls or replace semantic judgments with unvalidated keyword guesses.`;
 
+export const TYPED_OUTPUT_GUIDANCE = `ToolOutputMap declares each tool's complete result, including record fields, units and nullability. Take field names from those declarations instead of spending a cell on Object.keys, typeof or a sliced JSON.stringify of a tool result. Fetch, reduce and display the focused evidence in the same cell. Inspect a shape only where its declaration is JsonValue or Record<string, JsonValue>.`;
+
 /** Compose the upstream REPL with the one-shot headless completion contract. */
 export function apply(ctx, config) {
   installSchemaPresentation(ctx);
   installReadText(ctx);
   applyPrime(ctx, config);
+  // Prime's REPL contract asks the model to inspect uncertain shapes; typed
+  // host outputs make that a wasted round trip.
+  ctx.systemPrompt.section({
+    name: 'agent-harness-plugin:typed-output',
+    order: 655,
+    text: TYPED_OUTPUT_GUIDANCE,
+  });
   ctx.systemPrompt.section({
     name: 'agent-harness-plugin:recursive-budget',
     order: 657,

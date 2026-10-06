@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -16,6 +16,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent';
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local';
+import * as ToolRestrictions from '../tool-restrictions.mjs';
 import * as FileTools from '@deepseek-ai/dsh-tool-fs';
 import { MAX_READ_TEXT_BYTES } from '../read-text.mjs';
 import * as rlm from '../index.mjs';
@@ -173,6 +174,7 @@ test('real Prime assembly repairs bounded tools and guard rejects background chi
   const agent = await create('schema-guard');
   const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent.ctx });
   const sdk = assembly.sections.find(section => section.name === 'tools:sdk').text;
+  assert(assembly.sections.some(s => s.name === 'agent-harness-plugin:typed-output' && s.text === rlm.TYPED_OUTPUT_GUIDANCE));
   assert.match(sdk, /room_ids: string\[\]/);
   assert.match(sdk, /maximum=2000/);
   assert.deepEqual(ctx.tools.get('bounded_live', agent).parameters, parameters);
@@ -187,6 +189,21 @@ test('real Prime assembly repairs bounded tools and guard rejects background chi
   const implicit = await rawCell(agent, 'await agents.spawn({ description: "child", prompt: "Do required work" })');
   assert.equal(implicit.isError, true);
   assert.match(implicit.error.message, /requires foreground children/);
+});
+
+test('shipped restriction masks Prime apply_patch while host file tools stay available', { timeout: 30000 }, async t => {
+  const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8');
+  assert.match(patch, /name: \.\/tool-restrictions\.mjs\n\s+config:\n\s+deny:\n\s+- apply_patch\n/);
+  const { ctx, create } = await fixture(t);
+  await ctx.plugin(ToolRestrictions, { deny: ['apply_patch'] });
+  const agent = await create('restricted');
+  assert(ctx.tools.get('apply_patch') !== undefined);
+  assert.equal(ctx.tools.get('apply_patch', agent), undefined);
+  assert(ctx.tools.get('write', agent) !== undefined);
+  const sdk = (await ctx.systemPrompt.assemble({ agent, scope: agent.ctx }))
+    .sections.find(section => section.name === 'tools:sdk').text;
+  assert.doesNotMatch(sdk, /apply_patch/);
+  assert.match(sdk, /\bwrite: \{/);
 });
 
 test('hard timeout loses bindings and explicitly reports namespace restart', { timeout: 30000 }, async t => {
