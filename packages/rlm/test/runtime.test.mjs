@@ -21,7 +21,7 @@ import { MAX_READ_TEXT_BYTES } from '../read-text.mjs';
 import * as rlm from '../index.mjs';
 import * as runtime from '../runtime.mjs';
 
-async function fixture(t, options = {}) {
+async function fixture(t, options = {}, agentOptions = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-rlm-test-'));
   const ctx = new Context();
   t.after(async () => {
@@ -45,7 +45,7 @@ async function fixture(t, options = {}) {
   await ctx.plugin(runtime, { stateDirectory, ...options });
   // Focus this fixture on real Realm/child execution. The shipped patch retains
   // the stricter jobs and orchestration catalog check for full headless hosts.
-  await ctx.plugin(rlm, { stateDirectory, requireOrchestrationTools: false });
+  await ctx.plugin(rlm, { stateDirectory, requireOrchestrationTools: false, ...agentOptions });
   const create = id => ctx.agentLoop.create(SessionId(id), { provider: 'fixture', model: 'deterministic' });
   let sequence = 0;
   const rawCell = (agent, code) => ctx.tools.execute({
@@ -110,6 +110,32 @@ function textChunks(text) {
     { type: 'finish', reason: { kind: 'stop' } },
   ];
 }
+
+test('recursive calls receive the configured reasoning-inclusive budget and preserve incomplete results', { timeout: 30000 }, async t => {
+  const { ctx, create, cell } = await fixture(t, {}, { llm: { maxTokens: 16384 } });
+  const requests = [];
+  class BudgetModel extends LlmAdapter {
+    async *stream(options) {
+      requests.push(options);
+      if (options.maxTokens < 8192) {
+        yield { type: 'finish', reason: { kind: 'max-tokens' } };
+      } else {
+        yield* textChunks('complete');
+      }
+    }
+  }
+  ctx.llm.registerAdapter(['fixture'], new BudgetModel());
+  const agent = await create('recursive-budget');
+  const small = await cell(agent, 'await agents.query({ prompt: "bounded task", maxTokens: 4096 })');
+  assert.deepEqual(small.result, { text: '', truncated: true });
+  const normal = await cell(agent, 'await agents.queryMany({ prompts: ["first", "second"] })');
+  assert.deepEqual(normal.result, { replies: [{ text: 'complete', truncated: false }, { text: 'complete', truncated: false }] });
+  assert.deepEqual(requests.map(r => r.maxTokens), [4096, 16384, 16384]);
+  assert(requests.every(r => r.provider === 'fixture' && r.model === 'deterministic'));
+  const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent.ctx });
+  assert(assembly.sections.some(s => s.name === 'agent-harness-plugin:recursive-budget' && s.text.includes('Never reduce maxTokens')));
+  assert(assembly.sections.find(s => s.name === 'tools:sdk').text.includes('16,384'));
+});
 
 test('real worker retains Maps and closures across cells and isolates sessions', { timeout: 30000 }, async t => {
   const { create, cell } = await fixture(t);

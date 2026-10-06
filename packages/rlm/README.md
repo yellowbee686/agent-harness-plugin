@@ -30,6 +30,8 @@ The host's `read` tool is a display window and truncates individual lines at 2,0
 - Keep native subagent tools enabled. This composition retains the upstream `requireOrchestrationTools: true` check and requires spawn/fork, list/send/interrupt, and job list/output/kill capabilities. Missing capabilities fail during prompt assembly.
 - Credentials, model endpoints, permission policy, and child-depth limits belong to the host configuration. This package defines none.
 
+The headless patch sets the recursive generation budget to 16,384 tokens. This includes hidden reasoning as well as visible answer text. Normally omit `maxTokens`; a short desired answer does not imply a small reasoning budget. Empty `text` with `truncated: true` is an incomplete generation, never an empty source or a negative classification. Guidance permits at most one revised attempt with a larger previously reduced budget or narrower task, then requires an evidence-based fallback or disclosure. This is guidance, not a runtime retry counter. The upstream API still caps explicit requests at the configured ceiling and performs no automatic retry.
+
 ## Headless completion
 
 The wrapper adds one prompt section for headless completion. Required child work must use `await agents.spawn({ description, prompt, run_in_background: false })` (or `agents.fork`) and its returned output must be incorporated before the final answer. Parallel required calls can be awaited together with `Promise.allSettled`. `agents.send` acknowledges delivery, and `agents.list` reports status; neither waits for a report. There is no `agents.wait` or `agents.join` API. A final answer can end the host process and stop background children, so waiting commentary and unfinished drafts must not be presented as completion.

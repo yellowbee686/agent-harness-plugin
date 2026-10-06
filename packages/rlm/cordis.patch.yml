@@ -16,6 +16,10 @@
         stateDirectory: !!js dshHomePath('agent-harness-plugin', 'rlm')
         requireOrchestrationTools: true
         allowGlobalRefinement: false
+        # Generation includes reasoning. The upstream 4096 cap repeatedly left
+        # reasoning models with no answer; keep a bounded, larger headroom.
+        llm:
+          maxTokens: 16384
 
 # Deliberately omit dsh-prime-agent/context-manager and its Prime preset.
 # With CLM enabled, CLM owns context replacement; RLM only owns live variables.
