@@ -111,10 +111,13 @@ function textChunks(text) {
   ];
 }
 
-test('recursive calls receive the configured reasoning-inclusive budget and preserve incomplete results', { timeout: 30000 }, async t => {
-  const { ctx, create, cell } = await fixture(t, {}, { llm: { maxTokens: 16384 } });
+test('recursive calls inherit model defaults, preserve explicit budgets and incomplete results', { timeout: 30000 }, async t => {
+  const { ctx, create, cell } = await fixture(t);
   const requests = [];
   class BudgetModel extends LlmAdapter {
+    async resolveModel(provider, model) {
+      return { provider, id: model, name: model, defaultMaxTokens: 65536 };
+    }
     async *stream(options) {
       requests.push(options);
       if (options.maxTokens < 8192) {
@@ -130,11 +133,12 @@ test('recursive calls receive the configured reasoning-inclusive budget and pres
   assert.deepEqual(small.result, { text: '', truncated: true });
   const normal = await cell(agent, 'await agents.queryMany({ prompts: ["first", "second"] })');
   assert.deepEqual(normal.result, { replies: [{ text: 'complete', truncated: false }, { text: 'complete', truncated: false }] });
-  assert.deepEqual(requests.map(r => r.maxTokens), [4096, 16384, 16384]);
+  await cell(agent, 'await agents.query({ prompt: "explicit", maxTokens: 98304 })');
+  assert.deepEqual(requests.map(r => r.maxTokens), [4096, 65536, 65536, 98304]);
   assert(requests.every(r => r.provider === 'fixture' && r.model === 'deterministic'));
   const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent.ctx });
   assert(assembly.sections.some(s => s.name === 'agent-harness-plugin:recursive-budget' && s.text.includes('Never reduce maxTokens')));
-  assert(assembly.sections.find(s => s.name === 'tools:sdk').text.includes('16,384'));
+  assert(assembly.sections.find(s => s.name === 'tools:sdk').text.includes('model default'));
 });
 
 test('real worker retains Maps and closures across cells and isolates sessions', { timeout: 30000 }, async t => {

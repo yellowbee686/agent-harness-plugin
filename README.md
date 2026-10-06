@@ -20,7 +20,7 @@ npm ci --ignore-scripts
 npm test
 ```
 
-The RLM dependency is pinned to upstream commit `4b5596a8661a6a78b4de0a63a5dfb75bd5d8a2b7` (version 0.6.3). The lockfile records the complete dependency resolution. Nothing is installed into your default DSH profile by this setup.
+The RLM dependency is a locally patched archive based on upstream commit `4b5596a8661a6a78b4de0a63a5dfb75bd5d8a2b7` (version 0.6.3). [Patch provenance](packages/rlm/vendor/README.md) records the source/build change that removes the recursive generation cap. The lockfile records the complete dependency resolution. Nothing is installed into your default DSH profile by this setup.
 
 ## Run
 
