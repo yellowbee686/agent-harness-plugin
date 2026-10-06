@@ -1,5 +1,6 @@
 node_modules/
 *.tgz
+!packages/rlm/vendor/dsh-prime-agent-0.6.3.tgz
 .DS_Store
 coverage/
 .dsh/
