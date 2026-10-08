@@ -1,6 +1,6 @@
 # RLM composition for DSH headless
 
-This package reuses [dsh-prime-agent 0.6.3](https://github.com/yoke233/dsh-prime-agent/tree/4b5596a8661a6a78b4de0a63a5dfb75bd5d8a2b7) on DSH **0.1.7-rc.2**. It mounts the upstream runtime and control plane directly into the existing headless composition. It does not install the upstream Prime preset or evaluation runner shim.
+This package reuses [dsh-prime-agent 0.6.3](https://github.com/yoke233/dsh-prime-agent/tree/4b5596a8661a6a78b4de0a63a5dfb75bd5d8a2b7) on DSH **>=0.1.7-rc.2**, tested against 0.1.7-rc.2 and 0.2.0-rc.2. It mounts the upstream runtime and control plane directly into the existing headless composition. It does not install the upstream Prime preset or evaluation runner shim.
 
 Apply `cordis.patch.yml` after the host's ordinary model/tool configuration. The patch preserves the headless runner, model provider and MCP registrations. It selects native tool presentation, then the upstream plugin exposes `repl` as the only model-facing tool. Host capabilities remain available inside `repl` through the generated `tools.*` declarations. Prime's own `apply_patch` is masked with the upstream `tool-restrictions` row; host `edit` and `write` remain the file-change tools.
 

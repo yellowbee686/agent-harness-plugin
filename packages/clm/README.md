@@ -1,6 +1,6 @@
 # DSH CLM
 
-An optional Cordis plugin for **DSH 0.1.7-rc.2**. The model edits a per-session JSON context mirror through ordinary filesystem tools or a filesystem-capable REPL. Accepted edits change subsequent model requests through DSH's durable surface replacements.
+An optional Cordis plugin for **DSH >=0.1.7-rc.2**, tested against 0.1.7-rc.2 and 0.2.0-rc.2. The model edits a per-session JSON context mirror through ordinary filesystem tools or a filesystem-capable REPL. Accepted edits change subsequent model requests through DSH's durable surface replacements.
 
 ## Enable
 
@@ -74,7 +74,7 @@ This is a restricted text-block CLM, **not pi-clm's unrestricted mode**. It does
 
 Raw events remain in the append-only log. DSH replay reconstructs accepted replacements even without this plugin; there is no custom required event type or independent checkpoint database. The mirror itself is disposable, and a new agent lifecycle overwrites old unaccepted files from durable history. Disk durability uses the host's configured DSH session persistence/checkpoint policy. A crash in the middle of several block commits can preserve a subset of independently valid edits; the next lifecycle recovers the actual committed surface.
 
-Concurrent writes to one mirror are unsupported; finish and await filesystem edits before returning from the tool. Mirrors are retained locally after disposal and may contain conversation data. The implementation uses the public `Session.eventAt` read API available in the pinned release; upstream marks this API deprecated, so upgrades need compatibility review.
+Concurrent writes to one mirror are unsupported; finish and await filesystem edits before returning from the tool. Mirrors are retained locally after disposal and may contain conversation data. The implementation uses the public `Session.eventAt` read API available in the tested releases; upstream marks this API deprecated, so future API changes may require compatibility fixes.
 
 Publishing filesystem failures fail the agent request instead of silently disabling context editing. A published mirror can exceed `maxBytes` when raw history is large; an edited candidate must be reduced below the limit to be accepted.
 

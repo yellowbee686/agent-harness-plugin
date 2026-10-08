@@ -1,6 +1,6 @@
 # Agent Harness Plugins
 
-Composable CLM and RLM plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), tested against **DSH 0.1.7-rc.2**.
+Composable CLM and RLM plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), tested against **DSH 0.1.7-rc.2 and 0.2.0-rc.2**.
 
 | Plugin | Responsibility | Implementation |
 | --- | --- | --- |
@@ -11,7 +11,7 @@ The plugins can run separately or together. RLM owns live TypeScript variables; 
 
 ## Install
 
-Requirements: Node.js 24+, npm, and an explicitly installed DSH 0.1.7-rc.2. No model credentials or provider settings are included.
+Requirements: Node.js 24+, npm, and an explicitly installed DSH version satisfying `>=0.1.7-rc.2 || >=0.2.0-rc.2`. The explicit 0.2.0 prerelease branch keeps npm peer checks aligned with DSH compatibility checks. DSH peer dependencies have no upper version bound; future incompatibilities are addressed with fixes. Development dependencies remain pinned for reproducible tests. No model credentials or provider settings are included.
 
 ```sh
 git clone https://github.com/yellowbee686/agent-harness-plugin.git
