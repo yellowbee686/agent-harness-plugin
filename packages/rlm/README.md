@@ -32,6 +32,14 @@ The host's `read` tool is a display window and truncates individual lines at 2,0
 
 RLM adds no generation-token default or cap. Omitted `maxTokens` delegates to the host model configuration; explicit positive integers pass through unchanged. Generation includes hidden reasoning as well as visible answer text. Normally omit `maxTokens`; a short desired answer does not imply a small reasoning budget. Empty `text` with `truncated: true` is an incomplete generation, never an empty source or a negative classification. Guidance permits at most one revised attempt with a larger previously reduced budget or narrower task, then requires an evidence-based fallback or disclosure. This is guidance, not a runtime retry counter. The model/provider still enforces its own generation constraints. There is no automatic retry.
 
+## Delegation policy ownership
+
+The host owns when to delegate research or verification. The wrapper removes the
+upstream policy's two general agent-delegation recommendations during prompt
+assembly, while retaining REPL/state guidance and all recursive APIs. This lets
+PTC and RLM use the same host policy without extra delegation encouragement in RLM.
+It does not prohibit verification or create a Verifier automatically.
+
 ## Headless completion
 
 The wrapper adds one prompt section for headless completion. Required child work must use `await agents.spawn({ description, prompt, run_in_background: false })` (or `agents.fork`) and its returned output must be incorporated before the final answer. Parallel required calls can be awaited together with `Promise.allSettled`. `agents.send` acknowledges delivery, and `agents.list` reports status; neither waits for a report. There is no `agents.wait` or `agents.join` API. A final answer can end the host process and stop background children, so waiting commentary and unfinished drafts must not be presented as completion.

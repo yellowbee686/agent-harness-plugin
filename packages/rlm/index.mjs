@@ -39,6 +39,20 @@ export function apply(ctx, config) {
     && exec.arguments?.run_in_background !== false
     ? 'Headless RLM requires foreground children. Retry with run_in_background: false and await the returned result before answering.'
     : undefined);
+
+  // The host owns when to delegate, including verification. Keep Prime's
+  // REPL/state guidance without adding a second delegation policy to RLM.
+  ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {
+    const result = await next();
+    for (const section of result.sections) {
+      if (section.name !== 'prime-agent:rlm-policy') continue;
+      section.text = section.text.split('\n').filter(line =>
+        !line.startsWith('- For slow or independently completing work, start an agent or job,')
+        && !line.startsWith('- Delegate parallel context-heavy research or independent implementation to agents;')
+      ).join('\n');
+    }
+    return result;
+  });
   // Keep this outside tool:*: Prime replaces those sections with its SDK.
   ctx.systemPrompt.section({
     name: HEADLESS_COMPLETION_SECTION,

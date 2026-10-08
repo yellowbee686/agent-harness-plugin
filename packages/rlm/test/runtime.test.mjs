@@ -233,6 +233,10 @@ test('real native child recursively creates a grandchild with separate live Real
         .flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).join('\n');
       assert(systemText.includes(rlm.HEADLESS_COMPLETION_GUIDANCE));
       assert(systemText.includes('Existing host guidance stays visible.'));
+      assert(!systemText.includes('- Delegate parallel context-heavy research or independent implementation to agents;'));
+      assert(!systemText.includes('- For slow or independently completing work, start an agent or job,'));
+      assert(systemText.includes('Reuse bound results while their inputs and source state remain unchanged.'));
+      assert(systemText.includes('Only a live-namespace-restarted notice means they were lost;'));
       const user = options.messages.find(message => message.role === 'user');
       const prompt = user.content.filter(block => block.type === 'text').map(block => block.text).join('');
       const step = options.messages.filter(message => message.role === 'assistant').length;
